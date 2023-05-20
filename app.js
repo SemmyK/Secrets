@@ -1,9 +1,9 @@
-//jshint esversion:6
 require('dotenv').config()
 const express = require('express')
 const ejs = require('ejs')
 const mongoose = require('mongoose')
-var md5 = require('md5')
+const bcrypt = require('bcrypt')
+const saltRounds = 12
 const PORT = process.env.PORT || 3000
 
 //create express app
@@ -69,10 +69,20 @@ app
 					if (!foundUser) {
 						console.log('No user found. User=' + username)
 					} else {
-						if (foundUser.password === md5(password)) {
-							//show secrets
-							res.render('secrets')
-						}
+						//check the password
+						// Load hash from your password DB.
+						bcrypt
+							.compare(password, foundUser.password)
+							.then(function (result) {
+								if (result === true) {
+									res.render('secrets')
+								} else {
+									console.log('User not found in Database.')
+								}
+							})
+							.catch(err => {
+								console.log(err)
+							})
 					}
 				})
 				.catch(err => {
@@ -94,13 +104,18 @@ app
 	})
 	.post((req, res) => {
 		if (res.statusCode === 200) {
-			const newUser = new User({
-				email: req.body.username,
-				password: md5(req.body.password),
+			bcrypt.hash(req.body.password, saltRounds, (err, hash) => {
+				if (!err) {
+					const newUser = new User({
+						email: req.body.username,
+						password: hash,
+					})
+					newUser.save()
+					res.render('secrets')
+				} else {
+					console.log(err)
+				}
 			})
-
-			newUser.save()
-			res.render('secrets')
 		} else {
 			console.log('There was an error while registering user.')
 		}
