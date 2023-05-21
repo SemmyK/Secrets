@@ -1,16 +1,34 @@
 require('dotenv').config()
 const express = require('express')
 const ejs = require('ejs')
+const bodyParser = require('body-parser')
 const mongoose = require('mongoose')
-const bcrypt = require('bcrypt')
-const saltRounds = 12
+const session = require('express-session')
+const passport = require('passport')
+const passportLocalMongoose = require('passport-local-mongoose')
+//const LocalStrategy = require('passport-local')
+
 const PORT = process.env.PORT || 3000
 
 //create express app
 const app = express()
 app.use(express.static('public'))
-app.use(express.urlencoded({ extended: true }))
+app.use(bodyParser.urlencoded({ extended: false }))
 app.set('view engine', 'ejs')
+
+//create session
+app.use(
+	session({
+		secret: process.env.SECRET_STRING,
+		resave: false,
+		saveUninitialized: false,
+		cookie: {},
+	})
+)
+
+//initialize passport
+app.use(passport.initialize())
+app.use(passport.session())
 
 //set up mongoose
 //create MongoDB database
@@ -32,12 +50,25 @@ const userSchema = new mongoose.Schema({
 	},
 	password: {
 		type: String,
-		required: [true, 'No body specified!'],
+		required: false,
+	},
+})
+//add local mongoose to schema
+userSchema.plugin(passportLocalMongoose, {
+	usernameField: 'email',
+	errorMessages: {
+		IncorrectUsernameError: 'There is no account registered with that email',
 	},
 })
 
 //create model from schema
 const User = new mongoose.model('User', userSchema)
+
+//create session for user
+
+passport.use(User.createStrategy())
+passport.serializeUser(User.serializeUser())
+passport.deserializeUser(User.deserializeUser())
 
 //requests to db and server
 
@@ -63,35 +94,51 @@ app
 			const username = req.body.username
 			const password = req.body.password
 
-			//find user that matches in db
-			User.findOne({ email: username })
-				.then(foundUser => {
-					if (!foundUser) {
-						console.log('No user found. User=' + username)
-					} else {
-						//check the password
-						// Load hash from your password DB.
-						bcrypt
-							.compare(password, foundUser.password)
-							.then(function (result) {
-								if (result === true) {
-									res.render('secrets')
-								} else {
-									console.log('User not found in Database.')
-								}
-							})
-							.catch(err => {
-								console.log(err)
-							})
+			const alreadyUser = new User({
+				email: username,
+				password: password,
+			})
+
+			User.authenticate('local')(req, res, () => {
+				req.logIn(alreadyUser, err => {
+					if (err) {
+						console.log(err)
 					}
+					res.redirect('/secrets')
 				})
-				.catch(err => {
-					console.log(err)
-				})
+			})
+
+			// req.logIn(alreadyUser, function (err) {
+			// 	if (err) {
+			// 		throw err
+			// 	} else {
+			// 		res.redirect('/secrets')
+			// 	}
+			// 	// session saved
+			// })
 		} else {
 			console.log('There was an error while loging in user.')
 		}
 	})
+
+app.route('/secrets').get((req, res) => {
+	if (res.statusCode === 200) {
+		if (req.isAuthenticated()) {
+			res.render('secrets')
+		} else {
+			res.redirect('/login')
+		}
+	}
+})
+
+app.get('/logout', function (req, res, next) {
+	req.logout(function (err) {
+		if (err) {
+			return next(err)
+		}
+		res.redirect('/')
+	})
+})
 
 app
 	.route('/register')
@@ -104,16 +151,24 @@ app
 	})
 	.post((req, res) => {
 		if (res.statusCode === 200) {
-			bcrypt.hash(req.body.password, saltRounds, (err, hash) => {
-				if (!err) {
-					const newUser = new User({
-						email: req.body.username,
-						password: hash,
-					})
-					newUser.save()
-					res.render('secrets')
-				} else {
+			const username = req.body.username
+			const password = req.body.password
+			const newUser = new User({
+				email: username,
+			})
+			User.register(newUser, password, (err, user) => {
+				if (err) {
 					console.log(err)
+					res.redirect('/register')
+				} else {
+					User.authenticate('local')(req, res, () => {
+						req.logIn(user, err => {
+							if (err) {
+								console.log(err)
+							}
+							res.redirect('/secrets')
+						})
+					})
 				}
 			})
 		} else {
@@ -127,3 +182,29 @@ connectDB().then(() => {
 		console.log('listening for requests')
 	})
 })
+
+// //find user that matches in db
+// User.findOne({ email: username })
+// 	.then(foundUser => {
+// 		if (!foundUser) {
+// 			console.log('No user found. User=' + username)
+// 		} else {
+// 			//check the password
+// 			// Load hash from your password DB.
+// 			bcrypt
+// 				.compare(password, foundUser.password)
+// 				.then(function (result) {
+// 					if (result === true) {
+// 						res.render('secrets')
+// 					} else {
+// 						console.log('User not found in Database.')
+// 					}
+// 				})
+// 				.catch(err => {
+// 					console.log(err)
+// 				})
+// 		}
+// 	})
+// 	.catch(err => {
+// 		console.log(err)
+// 	})
