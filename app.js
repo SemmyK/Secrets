@@ -62,6 +62,7 @@ const userSchema = new mongoose.Schema({
 		type: String,
 		required: false,
 	},
+	secrets: [],
 })
 //add local mongoose to schema
 userSchema.plugin(passportLocalMongoose, {
@@ -201,7 +202,20 @@ app
 app.route('/secrets').get((req, res) => {
 	if (res.statusCode === 200) {
 		if (req.isAuthenticated()) {
-			res.render('secrets')
+			let secretsArr = []
+			//find users with secrets and show those secrets
+			User.find({ secrets: { $ne: [] } }).then(foundSecrets => {
+				foundSecrets.forEach(user => {
+					user.secrets.forEach(secret => {
+						secretsArr.push(secret)
+					})
+				})
+				if (secretsArr.length !== 0) {
+					res.render('secrets', { secrets: secretsArr })
+				} else {
+					res.render('secrets', { secrets: ['I am a Blacklist series Fan!'] })
+				}
+			})
 		} else {
 			res.redirect('/login')
 		}
@@ -269,6 +283,36 @@ app
 		}
 	})
 
+app
+	.route('/submit')
+	.get((req, res) => {
+		if (res.statusCode === 200) {
+			if (req.isAuthenticated()) {
+				res.render('submit')
+			} else {
+				res.redirect('/login')
+			}
+		}
+	})
+	.post((req, res) => {
+		if (res.statusCode === 200) {
+			const submittedSecret = req.body.secret
+
+			User.findById(req.user.id)
+				.then(foundUser => {
+					if (!foundUser) {
+						console.log('No user found.')
+					} else {
+						foundUser.secrets.push(submittedSecret)
+						foundUser.save()
+						res.redirect('/secrets')
+					}
+				})
+				.catch(err => {
+					console.log(err)
+				})
+		}
+	})
 //Connect to the database before listening
 connectDB().then(() => {
 	app.listen(PORT, () => {
