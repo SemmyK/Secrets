@@ -10,6 +10,7 @@ const passport = require('passport')
 const passportLocalMongoose = require('passport-local-mongoose')
 const LocalStrategy = require('passport-local').Strategy
 const GoogleStrategy = require('passport-google-oauth20').Strategy
+const FacebookStrategy = require('passport-facebook').Strategy
 const PORT = process.env.PORT || 3000
 
 //create and configure express app
@@ -47,6 +48,10 @@ const connectDB = async () => {
 //create a SCHEMA that sets out the fields each document will have and their datatypes
 const userSchema = new mongoose.Schema({
 	googleId: {
+		type: String,
+		required: false,
+	},
+	facebookId: {
 		type: String,
 		required: false,
 	},
@@ -110,6 +115,37 @@ passport.use(
 	)
 )
 
+// Configure Passport to use the FacebookStrategy for Facebook OAuth
+passport.use(
+	new FacebookStrategy(
+		{
+			clientID: process.env.FACEBOOK_CLIENT_ID,
+			clientSecret: process.env.FACEBOOK_CLIENT_SECRET,
+			callbackURL: 'http://localhost:3000/auth/facebook/secrets',
+			profileFields: ['id', 'displayName', 'email'],
+		},
+		async (accessToken, refreshToken, profile, done) => {
+			console.log(profile)
+			try {
+				// Find or create the user in your database
+				const user = await User.findOne({ facebookId: profile.id })
+
+				if (user) {
+					done(null, user)
+				} else {
+					const newUser = await User.create({
+						facebookId: profile.id,
+						name: profile.displayName,
+					})
+					done(null, newUser)
+				}
+			} catch (error) {
+				done(error, null)
+			}
+		}
+	)
+)
+
 // Serialize and deserialize user instances to and from the session
 passport.serializeUser(function (user, done) {
 	done(null, user.id)
@@ -143,6 +179,17 @@ app.get(
 	passport.authenticate('google', { failureRedirect: '/login' }),
 	(req, res) => {
 		res.redirect('/secrets') // Redirect to the home page after successful authentication
+	}
+)
+
+// Facebook OAuth routes
+app.get('/auth/facebook', passport.authenticate('facebook'))
+
+app.get(
+	'/auth/facebook/secrets',
+	passport.authenticate('facebook', { failureRedirect: '/login' }),
+	(req, res) => {
+		res.redirect('/secrets')
 	}
 )
 
