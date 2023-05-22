@@ -213,7 +213,7 @@ app.route('/secrets').get((req, res) => {
 				if (secretsArr.length !== 0) {
 					res.render('secrets', { secrets: secretsArr })
 				} else {
-					res.render('secrets', { secrets: ['I am a Blacklist series Fan!'] })
+					res.render('secrets', { secrets: ['Secret 0'] })
 				}
 			})
 		} else {
